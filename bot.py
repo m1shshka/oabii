@@ -18,7 +18,7 @@ if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN не установлен")
 
 try:
-    bot = telebot.TeleBot(TOKEN)
+    bot = telebot.TeleBot(TOKEN, threaded=False)  # Отключаем потоки для вебхуков
     logger.info("Бот успешно инициализирован")
 except Exception as e:
     logger.error(f"Ошибка инициализации бота: {e}")
@@ -75,7 +75,12 @@ def get_message():
         update = telebot.types.Update.de_json(json_string)
         if update:
             logger.info(f"Обновление: {update}")
-            bot.process_new_updates([update])
+            # Проверяем, является ли обновление командой /start
+            if update.message and update.message.text and update.message.text.startswith('/start'):
+                logger.info(f"Обнаружена команда /start от {update.message.chat.id}")
+                send_welcome(update.message)  # Явно вызываем обработчик
+            else:
+                bot.process_new_updates([update])  # Обрабатываем другие обновления
             logger.info("Обновление обработано")
         else:
             logger.warning("Получено пустое обновление")
