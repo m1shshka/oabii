@@ -53,7 +53,7 @@ def get_message():
 @app.route("/")
 def webhook():
     bot.remove_webhook()
-    bot.set_webhook(url=f"https://your-app-name.onrender.com/{TOKEN}")
+    bot.set_webhook(url=f"https://my-telegram-bot-123.onrender.com/{TOKEN}")
     return "Webhook set!", 200
 
 if __name__ == "__main__":
