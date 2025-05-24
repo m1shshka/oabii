@@ -48,49 +48,53 @@ def create_test_buttons():
 # Создание кнопок для категорий
 def create_category_buttons():
     markup = InlineKeyboardMarkup()
-    for category in faq_data['categories']:
-        markup.add(InlineKeyboardButton(category['name'], callback_data=f"cat_{category['name']}"))
+    for i, category in enumerate(faq_data['categories']):
+        markup.add(InlineKeyboardButton(category['name'], callback_data=f"cat_{i}"))
     markup.add(InlineKeyboardButton("Поиск по ключевому слову", callback_data="search"))
+    logger.info(f"Созданы кнопки категорий: {[cat['name'] for cat in faq_data['categories']]}")
     return markup
 
 # Создание кнопок для подкатегорий
-def create_subcategory_buttons(category_name):
+def create_subcategory_buttons(cat_index):
     markup = InlineKeyboardMarkup()
-    for category in faq_data['categories']:
-        if category['name'] == category_name:
-            for subcategory in category['subcategories']:
-                markup.add(InlineKeyboardButton(subcategory['name'], callback_data=f"subcat_{category_name}_{subcategory['name']}"))
-            break
-    markup.add(InlineKeyboardButton("Назад", callback_data="back_to_categories"))
+    try:
+        category = faq_data['categories'][cat_index]
+        for i, subcategory in enumerate(category['subcategories']):
+            markup.add(InlineKeyboardButton(subcategory['name'], callback_data=f"subcat_{cat_index}_{i}"))
+        markup.add(InlineKeyboardButton("Назад", callback_data="back_to_categories"))
+        logger.info(f"Созданы кнопки подкатегорий для категории {category['name']}: {[sub['name'] for sub in category['subcategories']]}")
+    except IndexError:
+        logger.error(f"Неверный индекс категории: {cat_index}")
+        markup.add(InlineKeyboardButton("Назад", callback_data="back_to_categories"))
     return markup
 
 # Создание кнопок для вопросов
-def create_question_buttons(category_name, subcategory_name):
+def create_question_buttons(cat_index, subcat_index):
     markup = InlineKeyboardMarkup()
-    for category in faq_data['categories']:
-        if category['name'] == category_name:
-            for subcategory in category['subcategories']:
-                if subcategory['name'] == subcategory_name:
-                    for i, question in enumerate(subcategory['questions'][:5], 1):
-                        markup.add(InlineKeyboardButton(f"Вопрос {i}", callback_data=f"q_{question['id']}"))
-                    break
-            break
-    markup.add(InlineKeyboardButton("Назад", callback_data=f"back_to_subcat_{category_name}"))
+    try:
+        subcategory = faq_data['categories'][cat_index]['subcategories'][subcat_index]
+        for i, question in enumerate(subcategory['questions'][:5], 1):
+            markup.add(InlineKeyboardButton(f"Вопрос {i}", callback_data=f"q_{question['id']}"))
+        markup.add(InlineKeyboardButton("Назад", callback_data=f"back_to_subcat_{cat_index}"))
+        logger.info(f"Созданы кнопки вопросов для подкатегории {subcategory['name']}: {[q['question'][:30] + '...' for q in subcategory['questions'][:5]]}")
+    except IndexError:
+        logger.error(f"Неверный индекс: cat_index={cat_index}, subcat_index={subcat_index}")
+        markup.add(InlineKeyboardButton("Назад", callback_data=f"back_to_subcat_{cat_index}"))
     return markup
 
 # Получение текста вопросов для подкатегории
-def get_questions_text(category_name, subcategory_name):
-    text = f"Вопросы в категории '{subcategory_name}':\n\n"
-    for category in faq_data['categories']:
-        if category['name'] == category_name:
-            for subcategory in category['subcategories']:
-                if subcategory['name'] == subcategory_name:
-                    for i, question in enumerate(subcategory['questions'][:5], 1):
-                        text += f"{i}. {question['question']}\n"
-                    break
-            break
-    text += "\nВыберите номер вопроса или вернитесь назад."
-    return text
+def get_questions_text(cat_index, subcat_index):
+    try:
+        subcategory = faq_data['categories'][cat_index]['subcategories'][subcat_index]
+        text = f"Вопросы в категории '{subcategory['name']}':\n\n"
+        for i, question in enumerate(subcategory['questions'][:5], 1):
+            text += f"{i}. {question['question']}\n"
+        text += "\nВыберите номер вопроса или вернитесь назад."
+        logger.info(f"Сформирован текст вопросов для подкатегории {subcategory['name']}")
+        return text
+    except IndexError:
+        logger.error(f"Неверный индекс при получении текста: cat_index={cat_index}, subcat_index={subcat_index}")
+        return "Ошибка: категория не найдена. Вернитесь назад."
 
 # Поиск вопросов по ключевому слову
 def search_questions(keyword):
@@ -100,6 +104,7 @@ def search_questions(keyword):
             for question in subcategory['questions']:
                 if re.search(keyword, question['question'], re.IGNORECASE) or re.search(keyword, question['answer'], re.IGNORECASE):
                     results.append(question)
+    logger.info(f"Поиск по '{keyword}': найдено {len(results)} вопросов")
     return results[:5]  # Ограничение на 5 результатов
 
 # Обработка команды /start
@@ -176,28 +181,30 @@ def callback_query(call):
 
         # Обработка категорий
         if data.startswith("cat_"):
-            category_name = data[4:]
+            cat_index = int(data[4:])
             bot.answer_callback_query(call.id)
+            category_name = faq_data['categories'][cat_index]['name']
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"Выберите подкатегорию в '{category_name}':",
-                reply_markup=create_subcategory_buttons(category_name)
+                reply_markup=create_subcategory_buttons(cat_index)
             )
-            logger.info(f"Отправлены подкатегории для {category_name}")
+            logger.info(f"Отправлены подкатегории для категории {category_name}")
             return
 
         # Обработка подкатегорий
         if data.startswith("subcat_"):
-            _, category_name, subcategory_name = data.split("_", 2)
+            cat_index, subcat_index = map(int, data[7:].split("_"))
             bot.answer_callback_query(call.id)
+            subcategory_name = faq_data['categories'][cat_index]['subcategories'][subcat_index]['name']
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=get_questions_text(category_name, subcategory_name),
-                reply_markup=create_question_buttons(category_name, subcategory_name)
+                text=get_questions_text(cat_index, subcat_index),
+                reply_markup=create_question_buttons(cat_index, subcat_index)
             )
-            logger.info(f"Отправлены вопросы для {subcategory_name}")
+            logger.info(f"Отправлены вопросы для подкатегории {subcategory_name}")
             return
 
         # Обработка вопросов
@@ -215,6 +222,9 @@ def callback_query(call):
                             )
                             logger.info(f"Отправлен ответ на вопрос {question_id}")
                             return
+            logger.error(f"Вопрос с id {question_id} не найден")
+            bot.answer_callback_query(call.id, "Вопрос не найден")
+            return
 
         # Обработка возврата
         if data == "back_to_categories":
@@ -229,13 +239,14 @@ def callback_query(call):
             return
 
         if data.startswith("back_to_subcat_"):
-            category_name = data[15:]
+            cat_index = int(data[15:])
+            category_name = faq_data['categories'][cat_index]['name']
             bot.answer_callback_query(call.id)
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
                 text=f"Выберите подкатегорию в '{category_name}':",
-                reply_markup=create_subcategory_buttons(category_name)
+                reply_markup=create_subcategory_buttons(cat_index)
             )
             logger.info(f"Возврат к подкатегориям {category_name}")
             return
