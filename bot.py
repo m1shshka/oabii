@@ -3,6 +3,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 import os
 import logging
+import json
+import re
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,19 +16,28 @@ app = Flask(__name__)
 # Настройка Telegram-бота
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 if not TOKEN:
-    logger.error("TELEGRAM_BOT_TOKEN не найден в переменных окружения")
+    logger.error("TELEGRAM_BOT_TOKEN не найден")
     raise ValueError("TELEGRAM_BOT_TOKEN не установлен")
 
 try:
-    bot = telebot.TeleBot(TOKEN, threaded=False)  # Отключаем потоки для вебхуков
+    bot = telebot.TeleBot(TOKEN, threaded=False)
     logger.info("Бот успешно инициализирован")
 except Exception as e:
     logger.error(f"Ошибка инициализации бота: {e}")
     raise
 
-# Создание кнопок
-def create_buttons():
-    logger.info("Создание кнопок")
+# Загрузка FAQ из JSON
+try:
+    with open('faq.json', 'r', encoding='utf-8') as f:
+        faq_data = json.load(f)
+    logger.info("FAQ успешно загружен")
+except Exception as e:
+    logger.error(f"Ошибка загрузки faq.json: {e}")
+    raise
+
+# Создание кнопок для тестовых вопросов (старая функциональность)
+def create_test_buttons():
+    logger.info("Создание тестовых кнопок")
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("Вопрос 1: Да", callback_data="q1_yes"))
     markup.add(InlineKeyboardButton("Вопрос 1: Нет", callback_data="q1_no"))
@@ -34,37 +45,212 @@ def create_buttons():
     markup.add(InlineKeyboardButton("Вопрос 2: Плохо", callback_data="q2_bad"))
     return markup
 
+# Создание кнопок для категорий
+def create_category_buttons():
+    markup = InlineKeyboardMarkup()
+    for category in faq_data['categories']:
+        markup.add(InlineKeyboardButton(category['name'], callback_data=f"cat_{category['name']}"))
+    markup.add(InlineKeyboardButton("Поиск по ключевому слову", callback_data="search"))
+    return markup
+
+# Создание кнопок для подкатегорий
+def create_subcategory_buttons(category_name):
+    markup = InlineKeyboardMarkup()
+    for category in faq_data['categories']:
+        if category['name'] == category_name:
+            for subcategory in category['subcategories']:
+                markup.add(InlineKeyboardButton(subcategory['name'], callback_data=f"subcat_{category_name}_{subcategory['name']}"))
+            break
+    markup.add(InlineKeyboardButton("Назад", callback_data="back_to_categories"))
+    return markup
+
+# Создание кнопок для вопросов
+def create_question_buttons(category_name, subcategory_name):
+    markup = InlineKeyboardMarkup()
+    for category in faq_data['categories']:
+        if category['name'] == category_name:
+            for subcategory in category['subcategories']:
+                if subcategory['name'] == subcategory_name:
+                    for i, question in enumerate(subcategory['questions'][:5], 1):
+                        markup.add(InlineKeyboardButton(f"Вопрос {i}", callback_data=f"q_{question['id']}"))
+                    break
+            break
+    markup.add(InlineKeyboardButton("Назад", callback_data=f"back_to_subcat_{category_name}"))
+    return markup
+
+# Получение текста вопросов для подкатегории
+def get_questions_text(category_name, subcategory_name):
+    text = f"Вопросы в категории '{subcategory_name}':\n\n"
+    for category in faq_data['categories']:
+        if category['name'] == category_name:
+            for subcategory in category['subcategories']:
+                if subcategory['name'] == subcategory_name:
+                    for i, question in enumerate(subcategory['questions'][:5], 1):
+                        text += f"{i}. {question['question']}\n"
+                    break
+            break
+    text += "\nВыберите номер вопроса или вернитесь назад."
+    return text
+
+# Поиск вопросов по ключевому слову
+def search_questions(keyword):
+    results = []
+    for category in faq_data['categories']:
+        for subcategory in category['subcategories']:
+            for question in subcategory['questions']:
+                if re.search(keyword, question['question'], re.IGNORECASE) or re.search(keyword, question['answer'], re.IGNORECASE):
+                    results.append(question)
+    return results[:5]  # Ограничение на 5 результатов
+
 # Обработка команды /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     try:
         logger.info(f"Получена команда /start от {message.chat.id}")
-        bot.reply_to(message, "Выберите ответ на вопрос:", reply_markup=create_buttons())
-        logger.info("Ответ с кнопками отправлен")
+        bot.reply_to(message, "Добро пожаловать! Я консультант по часто задаваемым вопросам. Выберите категорию:", reply_markup=create_category_buttons())
+        logger.info("Категории отправлены")
     except Exception as e:
         logger.error(f"Ошибка при обработке /start: {e}")
 
-# Обработка нажатий на кнопки
+# Обработка команды /test (старая функциональность)
+@bot.message_handler(commands=['test'])
+def send_test(message):
+    try:
+        logger.info(f"Получена команда /test от {message.chat.id}")
+        bot.reply_to(message, "Выберите ответ на тестовый вопрос:", reply_markup=create_test_buttons())
+        logger.info("Тестовые кнопки отправлены")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке /test: {e}")
+
+# Обработка команды /search
+@bot.message_handler(commands=['search'])
+def start_search(message):
+    try:
+        logger.info(f"Получена команда /search от {message.chat.id}")
+        bot.reply_to(message, "Введите ключевое слово для поиска:")
+        bot.register_next_step_handler(message, process_search)
+        logger.info("Ожидание ключевого слова")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке /search: {e}")
+
+# Обработка ключевого слова для поиска
+def process_search(message):
+    try:
+        keyword = message.text.strip()
+        logger.info(f"Поиск по ключевому слову: {keyword} от {message.chat.id}")
+        results = search_questions(keyword)
+        if results:
+            text = f"Результаты поиска по '{keyword}':\n\n"
+            markup = InlineKeyboardMarkup()
+            for i, result in enumerate(results, 1):
+                text += f"{i}. {result['question']}\n"
+                markup.add(InlineKeyboardButton(f"Вопрос {i}", callback_data=f"q_{result['id']}"))
+            markup.add(InlineKeyboardButton("Назад", callback_data="back_to_categories"))
+            bot.reply_to(message, text, reply_markup=markup)
+        else:
+            bot.reply_to(message, f"По запросу '{keyword}' ничего не найдено. Попробуйте другое слово.", reply_markup=create_category_buttons())
+        logger.info("Результаты поиска отправлены")
+    except Exception as e:
+        logger.error(f"Ошибка при поиске: {e}")
+        bot.reply_to(message, "Произошла ошибка. Попробуйте снова.", reply_markup=create_category_buttons())
+
+# Обработка callback-запросов
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     try:
         logger.info(f"Получен callback: {call.data} от {call.message.chat.id}")
-        answer = call.data
-        if answer == "q1_yes":
-            bot.answer_callback_query(call.id, "Вы выбрали: Да")
-            bot.send_message(call.message.chat.id, "Спасибо за ответ на Вопрос 1: Да!")
-        elif answer == "q1_no":
-            bot.answer_callback_query(call.id, "Вы выбрали: Нет")
-            bot.send_message(call.message.chat.id, "Спасибо за ответ на Вопрос 1: Нет!")
-        elif answer == "q2_good":
-            bot.answer_callback_query(call.id, "Вы выбрали: Хорошо")
-            bot.send_message(call.message.chat.id, "Спасибо за ответ на Вопрос 2: Хорошо!")
-        elif answer == "q2_bad":
-            bot.answer_callback_query(call.id, "Вы выбрали: Плохо")
-            bot.send_message(call.message.chat.id, "Спасибо за ответ на Вопрос 2: Плохо!")
-        logger.info(f"Обработан callback: {answer}")
+        data = call.data
+
+        # Обработка тестовых кнопок
+        if data in ["q1_yes", "q1_no", "q2_good", "q2_bad"]:
+            answers = {
+                "q1_yes": "Да",
+                "q1_no": "Нет",
+                "q2_good": "Хорошо",
+                "q2_bad": "Плохо"
+            }
+            bot.answer_callback_query(call.id, f"Вы выбрали: {answers[data]}")
+            bot.send_message(call.message.chat.id, f"Спасибо за ответ: {answers[data]}!")
+            logger.info(f"Обработан тестовый callback: {data}")
+            return
+
+        # Обработка категорий
+        if data.startswith("cat_"):
+            category_name = data[4:]
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"Выберите подкатегорию в '{category_name}':",
+                reply_markup=create_subcategory_buttons(category_name)
+            )
+            logger.info(f"Отправлены подкатегории для {category_name}")
+            return
+
+        # Обработка подкатегорий
+        if data.startswith("subcat_"):
+            _, category_name, subcategory_name = data.split("_", 2)
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=get_questions_text(category_name, subcategory_name),
+                reply_markup=create_question_buttons(category_name, subcategory_name)
+            )
+            logger.info(f"Отправлены вопросы для {subcategory_name}")
+            return
+
+        # Обработка вопросов
+        if data.startswith("q_"):
+            question_id = int(data[2:])
+            for category in faq_data['categories']:
+                for subcategory in category['subcategories']:
+                    for question in subcategory['questions']:
+                        if question['id'] == question_id:
+                            bot.answer_callback_query(call.id)
+                            bot.send_message(
+                                call.message.chat.id,
+                                f"Вопрос: {question['question']}\n\nОтвет: {question['answer']}",
+                                reply_markup=create_category_buttons()
+                            )
+                            logger.info(f"Отправлен ответ на вопрос {question_id}")
+                            return
+
+        # Обработка возврата
+        if data == "back_to_categories":
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="Выберите категорию:",
+                reply_markup=create_category_buttons()
+            )
+            logger.info("Возврат к категориям")
+            return
+
+        if data.startswith("back_to_subcat_"):
+            category_name = data[15:]
+            bot.answer_callback_query(call.id)
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=f"Выберите подкатегорию в '{category_name}':",
+                reply_markup=create_subcategory_buttons(category_name)
+            )
+            logger.info(f"Возврат к подкатегориям {category_name}")
+            return
+
+        # Обработка поиска
+        if data == "search":
+            bot.answer_callback_query(call.id)
+            bot.send_message(call.message.chat.id, "Введите ключевое слово для поиска:")
+            bot.register_next_step_handler(call.message, process_search)
+            logger.info("Запрошен поиск")
+            return
+
     except Exception as e:
         logger.error(f"Ошибка при обработке callback: {e}")
+        bot.answer_callback_query(call.id, "Произошла ошибка")
 
 # Маршрут для вебхуков
 @app.route(f"/{TOKEN}", methods=["POST"])
@@ -75,12 +261,11 @@ def get_message():
         update = telebot.types.Update.de_json(json_string)
         if update:
             logger.info(f"Обновление: {update}")
-            # Проверяем, является ли обновление командой /start
             if update.message and update.message.text and update.message.text.startswith('/start'):
                 logger.info(f"Обнаружена команда /start от {update.message.chat.id}")
-                send_welcome(update.message)  # Явно вызываем обработчик
+                send_welcome(update.message)
             else:
-                bot.process_new_updates([update])  # Обрабатываем другие обновления
+                bot.process_new_updates([update])
             logger.info("Обновление обработано")
         else:
             logger.warning("Получено пустое обновление")
