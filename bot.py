@@ -37,11 +37,19 @@ except Exception as e:
     logger.error(f"Ошибка загрузки faq.json: {e}")
     raise
 
-# Инициализация pymorphy3 для морфологического анализа
+# Инициализация pymorphy3
 morph = pymorphy3.MorphAnalyzer()
 
 # URL Apps Script
 APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyNhhsqtMavUkSN0SvgmiZZMKsWkorAidfrQ5bulQB0KtA3iM8zBp7-Es8TdQOGe9Dkww/exec'
+
+# Хранение данных заявок
+user_data_storage = {}
+
+# Экранирование специальных символов для MarkdownV2
+def escape_markdown(text):
+    special_chars = r'[_*[\]()~`>#+-=|{}.!]'
+    return re.sub(special_chars, r'\\\g<0>', text)
 
 # Создание кнопок для категорий
 def create_category_buttons():
@@ -67,7 +75,7 @@ def create_subcategory_buttons(cat_index):
         logger.error(f"Неверный индекс категории: {cat_index}")
     return markup
 
-# Создание кнопок для вопросов
+# Создание кнопок вопросов
 def create_question_buttons(cat_index, subcat_index):
     markup = InlineKeyboardMarkup()
     try:
@@ -84,19 +92,19 @@ def create_question_buttons(cat_index, subcat_index):
 def get_questions_text(cat_index, subcat_index):
     try:
         subcategory = faq_data['categories'][cat_index]['subcategories'][subcat_index]
-        text = f"📚 *{subcategory['name']}*\n\n"
+        text = f"📚 *{escape_markdown(subcategory['name'])}*\n\n"
         for i, question in enumerate(subcategory['questions'][:5], 1):
-            text += f"_{i}\\. {question['question']}_\n"
+            text += f"_{i}\\. {escape_markdown(question['question'])}_\n"
         text += "\nВыберите номер вопроса или вернитесь назад\\."
         return text
     except IndexError:
         logger.error(f"Неверный индекс: cat_index={cat_index}, subcat_index={subcat_index}")
         return "❌ Ошибка: категория не найдена."
 
-# Поиск вопросов с учетом склонений
+# Поиск вопросов
 def search_questions(keyword):
     results = []
-    normalized_keyword = morph.parse(keyword)[0].normal_form  # Приведение к начальной форме
+    normalized_keyword = morph.parse(keyword)[0].normal_form
     for category in faq_data['categories']:
         for subcategory in category['subcategories']:
             for question in subcategory['questions']:
@@ -109,21 +117,21 @@ def search_questions(keyword):
                         break
     return results[:5]
 
-# Обработка команды /start
+# Обработка /start
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     try:
         logger.info(f"Получена команда /start от {message.chat.id}")
         bot.reply_to(
             message,
-            "👋 *Добро пожаловать, Михаил!* Я консультант по вопросам обучения\\. Выберите категорию:",
+            escape_markdown("Привет, Михаил! 👋 Я консультант по вопросам обучения. Выбери категорию:"),
             reply_markup=create_category_buttons(),
             parse_mode='MarkdownV2'
         )
     except Exception as e:
         logger.error(f"Ошибка при обработке /start: {e}")
 
-# Обработка команды /test
+# Обработка /test
 @bot.message_handler(commands=['test'])
 def send_test(message):
     try:
@@ -135,19 +143,19 @@ def send_test(message):
         markup.add(InlineKeyboardButton("Вопрос 2: Плохо 👎", callback_data="q2_bad"))
         bot.reply_to(
             message,
-            "🧪 *Выберите ответ на тестовый вопрос:*",
+            escape_markdown("🧪 Выбери ответ на тестовый вопрос:"),
             reply_markup=markup,
             parse_mode='MarkdownV2'
         )
     except Exception as e:
         logger.error(f"Ошибка при обработке /test: {e}")
 
-# Обработка команды /search
+# Обработка /search
 @bot.message_handler(commands=['search'])
 def start_search(message):
     try:
         logger.info(f"Получена команда /search от {message.chat.id}")
-        bot.reply_to(message, "🔍 Введите ключевое слово для поиска:")
+        bot.reply_to(message, "🔍 Введи ключевое слово для поиска:")
         bot.register_next_step_handler(message, process_search)
     except Exception as e:
         logger.error(f"Ошибка при обработке /search: {e}")
@@ -159,17 +167,17 @@ def process_search(message):
         logger.info(f"Поиск по ключевому слову: {keyword} от {message.chat.id}")
         results = search_questions(keyword)
         if results:
-            text = f"🔍 *Результаты поиска по '{keyword}':*\n\n"
+            text = f"🔍 *Результаты поиска по '{escape_markdown(keyword)}':*\n\n"
             markup = InlineKeyboardMarkup()
             for i, result in enumerate(results, 1):
-                text += f"_{i}\\. {result['question']}_\n"
+                text += f"_{i}\\. {escape_markdown(result['question'])}_\n"
                 markup.add(InlineKeyboardButton(f"Вопрос {i} ❓", callback_data=f"q_{result['id']}"))
             markup.add(InlineKeyboardButton("Назад ⬅️", callback_data="back_to_categories"))
             bot.reply_to(message, text, reply_markup=markup, parse_mode='MarkdownV2')
         else:
             bot.reply_to(
                 message,
-                f"😕 По запросу *{keyword}* ничего не найдено\\.",
+                f"😕 По запросу *{escape_markdown(keyword)}* ничего не найдено\\.",
                 reply_markup=create_category_buttons(),
                 parse_mode='MarkdownV2'
             )
@@ -180,32 +188,33 @@ def process_search(message):
 # Обработка заявок
 def start_application(message):
     try:
-        user_data = {"telegramId": str(message.chat.id)}
-        logger.info(f"Начало заявки для {message.chat.id}: {user_data}")
-        bot.reply_to(message, "📝 Введите ФИО (например, Носиков Михаил Валерьевич):")
-        bot.register_next_step_handler(message, process_name, user_data)
+        chat_id = str(message.chat.id)
+        user_data_storage[chat_id] = {"telegramId": chat_id}
+        logger.info(f"Начало заявки для {chat_id}: {user_data_storage[chat_id]}")
+        bot.reply_to(message, "📝 Введи ФИО (например, Носиков Михаил Валерьевич):")
+        bot.register_next_step_handler(message, process_name, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при оформлении заявки: {e}")
 
-def process_name(message, user_data):
+def process_name(message, chat_id):
     try:
-        user_data["fio"] = message.text.strip()
-        logger.info(f"ФИО: {user_data['fio']} для {message.chat.id}")
-        bot.reply_to(message, "📞 Введите номер телефона (например, +79511121899):")
-        bot.register_next_step_handler(message, process_phone, user_data)
+        user_data_storage[chat_id]["fio"] = message.text.strip()
+        logger.info(f"ФИО: {user_data_storage[chat_id]['fio']} для {chat_id}")
+        bot.reply_to(message, "📞 Введи номер телефона (например, +79511222890):")
+        bot.register_next_step_handler(message, process_phone, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при обработке ФИО: {e}")
 
-def process_phone(message, user_data):
+def process_phone(message, chat_id):
     try:
-        user_data["phone"] = message.text.strip()
-        logger.info(f"Телефон: {user_data['phone']} для {message.chat.id}")
+        user_data_storage[chat_id]["phone"] = message.text.strip()
+        logger.info(f"Телефон: {user_data_storage[chat_id]['phone']} для {chat_id}")
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Высшее образование 🎓", callback_data=f"prog_vo_{message.chat.id}"))
-        markup.add(InlineKeyboardButton("Среднее профессиональное 🛠️", callback_data=f"prog_spo_{message.chat.id}"))
+        markup.add(InlineKeyboardButton("Высшее образование 🎓", callback_data=f"prog_vo_{chat_id}"))
+        markup.add(InlineKeyboardButton("Среднее профессиональное 🛠️", callback_data=f"prog_spo_{chat_id}"))
         bot.reply_to(
             message,
-            "🎓 *Выберите программу обучения:*",
+            escape_markdown("🎓 Выбери программу обучения:"),
             reply_markup=markup,
             parse_mode='MarkdownV2'
         )
@@ -225,7 +234,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, f"Вы выбрали: {answers[data]}")
             bot.send_message(
                 call.message.chat.id,
-                f"✅ *Спасибо за ответ:* {answers[data]}",
+                f"✅ *Спасибо за ответ:* {escape_markdown(answers[data])}",
                 parse_mode='MarkdownV2'
             )
             return
@@ -238,7 +247,7 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"📚 *Выберите подкатегорию в '{category_name}':*",
+                text=f"📚 *Выбери подкатегорию в '{escape_markdown(category_name)}':*",
                 reply_markup=create_subcategory_buttons(cat_index),
                 parse_mode='MarkdownV2'
             )
@@ -267,7 +276,7 @@ def callback_query(call):
                             bot.answer_callback_query(call.id)
                             bot.send_message(
                                 call.message.chat.id,
-                                f"❓ *Вопрос:* {question['question']}\n\n✅ *Ответ:* {question['answer']}",
+                                f"❓ *Вопрос:* {escape_markdown(question['question'])}\n\n✅ *Ответ:* {escape_markdown(question['answer'])}",
                                 reply_markup=create_category_buttons(),
                                 parse_mode='MarkdownV2'
                             )
@@ -278,7 +287,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id)
             bot.send_message(
                 call.message.chat.id,
-                "📝 *Начнем оформление заявки:*",
+                escape_markdown("📝 Начнем оформление заявки:"),
                 parse_mode='MarkdownV2'
             )
             start_application(call.message)
@@ -288,32 +297,32 @@ def callback_query(call):
         if data.startswith("prog_"):
             parts = data.split("_")
             program = "Высшее образование" if parts[1] == "vo" else "Среднее профессиональное"
-            chat_id = int(parts[2])
-            user_data = {
-                "telegramId": str(chat_id),
-                "fio": call.message.text if hasattr(call.message, 'text') else "",
-                "phone": "",
-                "program": program
-            }
-            # Попробуем восстановить user_data из предыдущих сообщений
-            if hasattr(call.message, 'reply_to_message'):
-                user_data["phone"] = call.message.reply_to_message.text if call.message.reply_to_message else ""
-                if hasattr(call.message.reply_to_message, 'reply_to_message'):
-                    user_data["fio"] = call.message.reply_to_message.reply_to_message.text if call.message.reply_to_message.reply_to_message else ""
-            logger.info(f"Отправка заявки: {user_data}")
-            bot.answer_callback_query(call.id)
-            bot.send_message(
-                call.message.chat.id,
-                "✅ *Заявка отправлена\\!* Мы свяжемся с вами\\.",
-                reply_markup=create_category_buttons(),
-                parse_mode='MarkdownV2'
-            )
-            # Отправка в Apps Script
-            response = requests.post(APPS_SCRIPT_URL, json=user_data)
-            if response.json().get('status') == 'success':
-                logger.info(f"Заявка сохранена: {user_data}")
+            chat_id = parts[2]
+            if chat_id in user_data_storage:
+                user_data = user_data_storage[chat_id]
+                user_data["program"] = program
+                logger.info(f"Отправка заявки: {user_data}")
+                bot.answer_callback_query(call.id)
+                bot.send_message(
+                    call.message.chat.id,
+                    escape_markdown("✅ Заявка отправлена! Мы свяжемся с вами."),
+                    reply_markup=create_category_buttons(),
+                    parse_mode='MarkdownV2'
+                )
+                # Отправка в Apps Script
+                response = requests.post(APPS_SCRIPT_URL, json=user_data)
+                if response.json().get('status') == 'success':
+                    logger.info(f"Заявка сохранена: {user_data}")
+                else:
+                    logger.error(f"Ошибка сохранения заявки: {response.json()}")
+                del user_data_storage[chat_id]  # Очистка данных
             else:
-                logger.error(f"Ошибка сохранения заявки: {response.json()}")
+                logger.error(f"Данные заявки не найдены для {chat_id}")
+                bot.send_message(
+                    call.message.chat.id,
+                    "❌ Ошибка: данные заявки потеряны. Попробуй снова.",
+                    reply_markup=create_category_buttons()
+                )
             return
 
         # Возврат
@@ -322,7 +331,7 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text="📚 *Выберите категорию:*",
+                text=escape_markdown("📚 Выбери категорию:"),
                 reply_markup=create_category_buttons(),
                 parse_mode='MarkdownV2'
             )
@@ -335,7 +344,7 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"📚 *Выберите подкатегорию в '{category_name}':*",
+                text=f"📚 *Выбери подкатегорию в '{escape_markdown(category_name)}':*",
                 reply_markup=create_subcategory_buttons(cat_index),
                 parse_mode='MarkdownV2'
             )
@@ -346,7 +355,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id)
             bot.send_message(
                 call.message.chat.id,
-                "🔍 *Введите ключевое слово для поиска:*",
+                escape_markdown("🔍 Введи ключевое слово для поиска:"),
                 parse_mode='MarkdownV2'
             )
             bot.register_next_step_handler(call.message, process_search)
