@@ -49,7 +49,7 @@ user_data_storage = {}
 # Экранирование специальных символов для MarkdownV2
 def escape_markdown(text):
     special_chars = r'[_*[\]()~`>#+-=|{}.!]'
-    return re.sub(special_chars, r'\\\g<0>', text)
+    return re.sub(special_chars, r'\\\g<0>', str(text))
 
 # Создание кнопок для категорий
 def create_category_buttons():
@@ -189,21 +189,57 @@ def process_search(message):
 def start_application(message):
     try:
         chat_id = str(message.chat.id)
-        user_data_storage[chat_id] = {"telegramId": chat_id}
+        username = message.from_user.username
+        if not username:
+            bot.reply_to(
+                message,
+                escape_markdown("⚠️ У вас не указан username в Telegram (например, @mishanosikov). Пожалуйста, установите его в настройках Telegram и попробуйте снова, или укажите username вручную:"),
+                parse_mode='MarkdownV2'
+            )
+            bot.register_next_step_handler(message, process_manual_username, chat_id)
+            return
+        user_data_storage[chat_id] = {"telegramId": f"@{username}"}
         logger.info(f"Начало заявки для {chat_id}: {user_data_storage[chat_id]}")
-        bot.reply_to(message, "📝 Введи ФИО (например, Носиков Михаил Валерьевич):")
+        bot.reply_to(
+            message,
+            escape_markdown("📝 Введи ФИО (например, Носиков Михаил Валерьевич):"),
+            parse_mode='MarkdownV2'
+        )
         bot.register_next_step_handler(message, process_name, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при оформлении заявки: {e}")
+        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+
+def process_manual_username(message, chat_id):
+    try:
+        username = message.text.strip()
+        if not username.startswith('@'):
+            username = f"@{username}"
+        user_data_storage[chat_id] = {"telegramId": username}
+        logger.info(f"Ручной username: {username} для {chat_id}")
+        bot.reply_to(
+            message,
+            escape_markdown("📝 Введи ФИО (например, Носиков Михаил Валерьевич):"),
+            parse_mode='MarkdownV2'
+        )
+        bot.register_next_step_handler(message, process_name, chat_id)
+    except Exception as e:
+        logger.error(f"Ошибка при обработке ручного username: {e}")
+        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_name(message, chat_id):
     try:
         user_data_storage[chat_id]["fio"] = message.text.strip()
         logger.info(f"ФИО: {user_data_storage[chat_id]['fio']} для {chat_id}")
-        bot.reply_to(message, "📞 Введи номер телефона (например, +79511222890):")
+        bot.reply_to(
+            message,
+            escape_markdown("📞 Введи номер телефона (например, +79511222890):"),
+            parse_mode='MarkdownV2'
+        )
         bot.register_next_step_handler(message, process_phone, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при обработке ФИО: {e}")
+        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_phone(message, chat_id):
     try:
@@ -220,6 +256,7 @@ def process_phone(message, chat_id):
         )
     except Exception as e:
         logger.error(f"Ошибка при обработке телефона: {e}")
+        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 # Обработка callback-запросов
 @bot.callback_query_handler(func=lambda call: True)
@@ -320,8 +357,9 @@ def callback_query(call):
                 logger.error(f"Данные заявки не найдены для {chat_id}")
                 bot.send_message(
                     call.message.chat.id,
-                    "❌ Ошибка: данные заявки потеряны. Попробуй снова.",
-                    reply_markup=create_category_buttons()
+                    escape_markdown("❌ Ошибка: данные заявки потеряны. Попробуй снова."),
+                    reply_markup=create_category_buttons(),
+                    parse_mode='MarkdownV2'
                 )
             return
 
