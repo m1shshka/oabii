@@ -55,8 +55,8 @@ def escape_markdown(text):
 def create_category_buttons():
     markup = InlineKeyboardMarkup()
     for i, category in enumerate(faq_data['categories']):
-        markup.add(InlineKeyboardButton(category['name'], callback_data=f"cat_{i}"))
-    markup.add(InlineKeyboardButton("Поиск по ключевому слову 🔍", callback_data="search"))
+        markup.add(InlineKeyboardButton(f"📚 {category['name']}", callback_data=f"cat_{i}"))
+    markup.add(InlineKeyboardButton("🔍 Поиск по ключевому слову", callback_data="search"))
     logger.info(f"Созданы кнопки категорий: {[cat['name'] for cat in faq_data['categories']]}")
     return markup
 
@@ -66,10 +66,10 @@ def create_subcategory_buttons(cat_index):
     try:
         category = faq_data['categories'][cat_index]
         for i, subcategory in enumerate(category['subcategories']):
-            markup.add(InlineKeyboardButton(subcategory['name'], callback_data=f"subcat_{cat_index}_{i}"))
+            markup.add(InlineKeyboardButton(f"📌 {subcategory['name']}", callback_data=f"subcat_{cat_index}_{i}"))
         if category['name'] == "Абитуриенту":
-            markup.add(InlineKeyboardButton("Оставить заявку 📋", callback_data="apply"))
-        markup.add(InlineKeyboardButton("Назад ⬅️", callback_data="back_to_categories"))
+            markup.add(InlineKeyboardButton("📋 Оставить заявку", callback_data="apply"))
+        markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_categories"))
         logger.info(f"Созданы кнопки подкатегорий для {category['name']}")
     except IndexError:
         logger.error(f"Неверный индекс категории: {cat_index}")
@@ -81,8 +81,8 @@ def create_question_buttons(cat_index, subcat_index):
     try:
         subcategory = faq_data['categories'][cat_index]['subcategories'][subcat_index]
         for i, question in enumerate(subcategory['questions'][:5], 1):
-            markup.add(InlineKeyboardButton(f"Вопрос {i} ❓", callback_data=f"q_{question['id']}"))
-        markup.add(InlineKeyboardButton("Назад ⬅️", callback_data=f"back_to_subcat_{cat_index}"))
+            markup.add(InlineKeyboardButton(f"❓ Вопрос {i}", callback_data=f"q_{question['id']}"))
+        markup.add(InlineKeyboardButton("⬅️ Назад", callback_data=f"back_to_subcat_{cat_index}"))
         logger.info(f"Созданы кнопки вопросов для {subcategory['name']}")
     except IndexError:
         logger.error(f"Неверный индекс: cat_index={cat_index}, subcat_index={subcat_index}")
@@ -92,9 +92,9 @@ def create_question_buttons(cat_index, subcat_index):
 def get_questions_text(cat_index, subcat_index):
     try:
         subcategory = faq_data['categories'][cat_index]['subcategories'][subcat_index]
-        text = f"📚 *{escape_markdown(subcategory['name'])}*\n\n"
+        text = f"✨ *{escape_markdown(subcategory['name'])}*\n\n"
         for i, question in enumerate(subcategory['questions'][:5], 1):
-            text += f"_{i}\\. {escape_markdown(question['question'])}_\n"
+            text += f"_{i}\\. {escape_markdown(question['question'])} ❓_\n"
         text += "\nВыберите номер вопроса или вернитесь назад\\."
         return text
     except IndexError:
@@ -122,9 +122,12 @@ def search_questions(keyword):
 def send_welcome(message):
     try:
         logger.info(f"Получена команда /start от {message.chat.id}")
+        user_name = message.from_user.first_name or message.from_user.username or "Курсант"
+        if user_name.startswith('@'):
+            user_name = user_name[1:]  # Убираем @ для красоты
         bot.reply_to(
             message,
-            escape_markdown("Привет, Михаил! 👋 Я консультант по вопросам обучения. Выбери категорию:"),
+            escape_markdown(f"Здравия желаю, {user_name}! 👋 Я Ассистент курсанта по вопросам обучения. Выбери категорию:"),
             reply_markup=create_category_buttons(),
             parse_mode='MarkdownV2'
         )
@@ -137,10 +140,10 @@ def send_test(message):
     try:
         logger.info(f"Получена команда /test от {message.chat.id}")
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Вопрос 1: Да ✅", callback_data="q1_yes"))
-        markup.add(InlineKeyboardButton("Вопрос 1: Нет ❌", callback_data="q1_no"))
-        markup.add(InlineKeyboardButton("Вопрос 2: Хорошо 👍", callback_data="q2_good"))
-        markup.add(InlineKeyboardButton("Вопрос 2: Плохо 👎", callback_data="q2_bad"))
+        markup.add(InlineKeyboardButton("✅ Вопрос 1: Да", callback_data="q1_yes"))
+        markup.add(InlineKeyboardButton("❌ Вопрос 1: Нет", callback_data="q1_no"))
+        markup.add(InlineKeyboardButton("👍 Вопрос 2: Хорошо", callback_data="q2_good"))
+        markup.add(InlineKeyboardButton("👎 Вопрос 2: Плохо", callback_data="q2_bad"))
         bot.reply_to(
             message,
             escape_markdown("🧪 Выбери ответ на тестовый вопрос:"),
@@ -155,7 +158,7 @@ def send_test(message):
 def start_search(message):
     try:
         logger.info(f"Получена команда /search от {message.chat.id}")
-        bot.reply_to(message, "🔍 Введи ключевое слово для поиска:")
+        bot.reply_to(message, escape_markdown("🔍 Введи ключевое слово для поиска:"), parse_mode='MarkdownV2')
         bot.register_next_step_handler(message, process_search)
     except Exception as e:
         logger.error(f"Ошибка при обработке /search: {e}")
@@ -170,20 +173,20 @@ def process_search(message):
             text = f"🔍 *Результаты поиска по '{escape_markdown(keyword)}':*\n\n"
             markup = InlineKeyboardMarkup()
             for i, result in enumerate(results, 1):
-                text += f"_{i}\\. {escape_markdown(result['question'])}_\n"
-                markup.add(InlineKeyboardButton(f"Вопрос {i} ❓", callback_data=f"q_{result['id']}"))
-            markup.add(InlineKeyboardButton("Назад ⬅️", callback_data="back_to_categories"))
+                text += f"_{i}\\. {escape_markdown(result['question'])} ❓_\n"
+                markup.add(InlineKeyboardButton(f"❓ Вопрос {i}", callback_data=f"q_{result['id']}"))
+            markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_categories"))
             bot.reply_to(message, text, reply_markup=markup, parse_mode='MarkdownV2')
         else:
             bot.reply_to(
                 message,
-                f"😕 По запросу *{escape_markdown(keyword)}* ничего не найдено\\.",
+                escape_markdown(f"😕 Не могу знать, в моей базе знаний отсутствует информация по запросу *{keyword}*."),
                 reply_markup=create_category_buttons(),
                 parse_mode='MarkdownV2'
             )
     except Exception as e:
         logger.error(f"Ошибка при поиске: {e}")
-        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.reply_to(message, escape_markdown("❌ Произошла ошибка."), reply_markup=create_category_buttons(), parse_mode='MarkdownV2')
 
 # Обработка заявок
 def start_application(call):
@@ -209,7 +212,7 @@ def start_application(call):
         bot.register_next_step_handler(call.message, process_name, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при оформлении заявки для {chat_id}: {e}")
-        bot.send_message(chat_id, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.send_message(chat_id, escape_markdown("❌ Произошла ошибка."), reply_markup=create_category_buttons(), parse_mode='MarkdownV2')
 
 def process_manual_username(message, chat_id):
     try:
@@ -226,7 +229,7 @@ def process_manual_username(message, chat_id):
         bot.register_next_step_handler(message, process_name, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при обработке ручного username для {chat_id}: {e}")
-        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.reply_to(message, escape_markdown("❌ Произошла ошибка."), reply_markup=create_category_buttons(), parse_mode='MarkdownV2')
 
 def process_name(message, chat_id):
     try:
@@ -240,7 +243,7 @@ def process_name(message, chat_id):
         bot.register_next_step_handler(message, process_phone, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при обработке ФИО для {chat_id}: {e}")
-        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.reply_to(message, escape_markdown("❌ Произошла ошибка."), reply_markup=create_category_buttons(), parse_mode='MarkdownV2')
 
 def process_phone(message, chat_id):
     try:
@@ -262,8 +265,8 @@ def process_phone(message, chat_id):
         user_data_storage[chat_id]["phone"] = phone
         logger.info(f"Телефон: {user_data_storage[chat_id]['phone']} для {chat_id}")
         markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton("Высшее образование 🎓", callback_data=f"prog_vo_{chat_id}"))
-        markup.add(InlineKeyboardButton("Среднее профессиональное 🛠️", callback_data=f"prog_spo_{chat_id}"))
+        markup.add(InlineKeyboardButton("🎓 Высшее образование", callback_data=f"prog_vo_{chat_id}"))
+        markup.add(InlineKeyboardButton("🛠️ Среднее профессиональное", callback_data=f"prog_spo_{chat_id}"))
         bot.reply_to(
             message,
             escape_markdown("🎓 Выбери программу обучения:"),
@@ -272,7 +275,7 @@ def process_phone(message, chat_id):
         )
     except Exception as e:
         logger.error(f"Ошибка при обработке телефона для {chat_id}: {e}")
-        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.reply_to(message, escape_markdown("❌ Произошла ошибка."), reply_markup=create_category_buttons(), parse_mode='MarkdownV2')
 
 # Обработка callback-запросов
 @bot.callback_query_handler(func=lambda call: True)
@@ -287,7 +290,7 @@ def callback_query(call):
             bot.answer_callback_query(call.id, f"Вы выбрали: {answers[data]}")
             bot.send_message(
                 call.message.chat.id,
-                f"✅ *Спасибо за ответ:* {escape_markdown(answers[data])}",
+                escape_markdown(f"✅ Спасибо за ответ: {answers[data]}"),
                 parse_mode='MarkdownV2'
             )
             return
@@ -300,7 +303,7 @@ def callback_query(call):
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"📚 *Выбери подкатегорию в '{escape_markdown(category_name)}':*",
+                text=escape_markdown(f"✨ Выбери подкатегорию в '{category_name}':"),
                 reply_markup=create_subcategory_buttons(cat_index),
                 parse_mode='MarkdownV2'
             )
@@ -329,7 +332,7 @@ def callback_query(call):
                             bot.answer_callback_query(call.id)
                             bot.send_message(
                                 call.message.chat.id,
-                                f"❓ *Вопрос:* {escape_markdown(question['question'])}\n\n✅ *Ответ:* {escape_markdown(question['answer'])}",
+                                escape_markdown(f"❓ Вопрос: {question['question']}\n\n✅ Ответ: {question['answer']}"),
                                 reply_markup=create_category_buttons(),
                                 parse_mode='MarkdownV2'
                             )
@@ -358,7 +361,7 @@ def callback_query(call):
                 bot.answer_callback_query(call.id)
                 bot.send_message(
                     call.message.chat.id,
-                    escape_markdown("✅ Заявка отправлена! Мы свяжемся с вами."),
+                    escape_markdown("✅ Заявка отправлена! Мы свяжемся с вами. 📞"),
                     reply_markup=create_category_buttons(),
                     parse_mode='MarkdownV2'
                 )
@@ -368,7 +371,7 @@ def callback_query(call):
                     logger.info(f"Заявка сохранена: {user_data}")
                 else:
                     logger.error(f"Ошибка сохранения заявки: {response.json()}")
-                del user_data_storage[chat_id]  # Очистка данных
+                del user_data_storage[chat_id]
             else:
                 logger.error(f"Данные заявки не найдены для {chat_id}")
                 bot.send_message(
@@ -394,11 +397,10 @@ def callback_query(call):
         if data.startswith("back_to_subcat_"):
             cat_index = int(data[15:])
             category_name = faq_data['categories'][cat_index]['name']
-            bot.answer_callback_query(call.id)
             bot.edit_message_text(
                 chat_id=call.message.chat.id,
                 message_id=call.message.message_id,
-                text=f"📚 *Выбери подкатегорию в '{escape_markdown(category_name)}':*",
+                text=escape_markdown(f"✨ Выбери подкатегорию в '{category_name}':"),
                 reply_markup=create_subcategory_buttons(cat_index),
                 parse_mode='MarkdownV2'
             )
@@ -417,7 +419,7 @@ def callback_query(call):
 
     except Exception as e:
         logger.error(f"Ошибка при обработке callback: {e}")
-        bot.answer_callback_query(call.id, "❌ Произошла ошибка")
+        bot.answer_callback_query(call.id, escape_markdown("❌ Произошла ошибка."))
 
 # Маршрут для вебхуков
 @app.route(f"/{TOKEN}", methods=['POST'])
