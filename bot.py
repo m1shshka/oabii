@@ -190,6 +190,7 @@ def start_application(message):
     try:
         chat_id = str(message.chat.id)
         username = message.from_user.username
+        logger.info(f"Начало заявки для chat_id: {chat_id}, username: {username}")
         if not username:
             bot.reply_to(
                 message,
@@ -198,8 +199,8 @@ def start_application(message):
             )
             bot.register_next_step_handler(message, process_manual_username, chat_id)
             return
-        user_data_storage[chat_id] = {"telegramId": f"@{username}"}
-        logger.info(f"Начало заявки для {chat_id}: {user_data_storage[chat_id]}")
+        user_data_storage[chat_id] = {"telegramId": f"@{username}", "chatId": chat_id}
+        logger.info(f"Заявка инициализирована: {user_data_storage[chat_id]}")
         bot.reply_to(
             message,
             escape_markdown("📝 Введи ФИО (например, Носиков Михаил Валерьевич):"),
@@ -207,7 +208,7 @@ def start_application(message):
         )
         bot.register_next_step_handler(message, process_name, chat_id)
     except Exception as e:
-        logger.error(f"Ошибка при оформлении заявки: {e}")
+        logger.error(f"Ошибка при оформлении заявки для {chat_id}: {e}")
         bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_manual_username(message, chat_id):
@@ -215,7 +216,7 @@ def process_manual_username(message, chat_id):
         username = message.text.strip()
         if not username.startswith('@'):
             username = f"@{username}"
-        user_data_storage[chat_id] = {"telegramId": username}
+        user_data_storage[chat_id] = {"telegramId": username, "chatId": chat_id}
         logger.info(f"Ручной username: {username} для {chat_id}")
         bot.reply_to(
             message,
@@ -224,7 +225,7 @@ def process_manual_username(message, chat_id):
         )
         bot.register_next_step_handler(message, process_name, chat_id)
     except Exception as e:
-        logger.error(f"Ошибка при обработке ручного username: {e}")
+        logger.error(f"Ошибка при обработке ручного username для {chat_id}: {e}")
         bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_name(message, chat_id):
@@ -238,7 +239,7 @@ def process_name(message, chat_id):
         )
         bot.register_next_step_handler(message, process_phone, chat_id)
     except Exception as e:
-        logger.error(f"Ошибка при обработке ФИО: {e}")
+        logger.error(f"Ошибка при обработке ФИО для {chat_id}: {e}")
         bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_phone(message, chat_id):
@@ -255,7 +256,7 @@ def process_phone(message, chat_id):
             parse_mode='MarkdownV2'
         )
     except Exception as e:
-        logger.error(f"Ошибка при обработке телефона: {e}")
+        logger.error(f"Ошибка при обработке телефона для {chat_id}: {e}")
         bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 # Обработка callback-запросов
