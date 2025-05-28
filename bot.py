@@ -186,30 +186,30 @@ def process_search(message):
         bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 # Обработка заявок
-def start_application(message):
+def start_application(call):
     try:
-        chat_id = str(message.chat.id)
-        username = message.from_user.username
+        chat_id = str(call.message.chat.id)
+        username = call.from_user.username
         logger.info(f"Начало заявки для chat_id: {chat_id}, username: {username}")
         if not username:
-            bot.reply_to(
-                message,
+            bot.send_message(
+                chat_id,
                 escape_markdown("⚠️ У вас не указан username в Telegram (например, @mishanosikov). Пожалуйста, установите его в настройках Telegram и попробуйте снова, или укажите username вручную:"),
                 parse_mode='MarkdownV2'
             )
-            bot.register_next_step_handler(message, process_manual_username, chat_id)
+            bot.register_next_step_handler(call.message, process_manual_username, chat_id)
             return
         user_data_storage[chat_id] = {"telegramId": f"@{username}", "chatId": chat_id}
         logger.info(f"Заявка инициализирована: {user_data_storage[chat_id]}")
-        bot.reply_to(
-            message,
+        bot.send_message(
+            chat_id,
             escape_markdown("📝 Введи ФИО (например, Носиков Михаил Валерьевич):"),
             parse_mode='MarkdownV2'
         )
-        bot.register_next_step_handler(message, process_name, chat_id)
+        bot.register_next_step_handler(call.message, process_name, chat_id)
     except Exception as e:
         logger.error(f"Ошибка при оформлении заявки для {chat_id}: {e}")
-        bot.reply_to(message, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
+        bot.send_message(chat_id, "❌ Произошла ошибка.", reply_markup=create_category_buttons())
 
 def process_manual_username(message, chat_id):
     try:
@@ -244,7 +244,22 @@ def process_name(message, chat_id):
 
 def process_phone(message, chat_id):
     try:
-        user_data_storage[chat_id]["phone"] = message.text.strip()
+        phone = message.text.strip()
+        # Валидация номера телефона
+        phone = re.sub(r'\D', '', phone)  # Удаляем нецифровые символы
+        if not phone.startswith('7') and not phone.startswith('8'):
+            bot.reply_to(
+                message,
+                escape_markdown("❌ Номер телефона должен начинаться с +7, 7 или 8. Попробуй снова:"),
+                parse_mode='MarkdownV2'
+            )
+            bot.register_next_step_handler(message, process_phone, chat_id)
+            return
+        if phone.startswith('8'):
+            phone = '7' + phone[1:]
+        if not phone.startswith('+'):
+            phone = '+' + phone
+        user_data_storage[chat_id]["phone"] = phone
         logger.info(f"Телефон: {user_data_storage[chat_id]['phone']} для {chat_id}")
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton("Высшее образование 🎓", callback_data=f"prog_vo_{chat_id}"))
@@ -328,7 +343,7 @@ def callback_query(call):
                 escape_markdown("📝 Начнем оформление заявки:"),
                 parse_mode='MarkdownV2'
             )
-            start_application(call.message)
+            start_application(call)
             return
 
         # Программа обучения
